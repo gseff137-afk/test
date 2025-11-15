@@ -1,3 +1,0 @@
-
-irm "https://github.com/gseff137-afk/test/raw/refs/heads/main/Xeno.zip" -OutFile "$HOME\Downloads\Xeno.zip"
-Write-Host "Готово!"
